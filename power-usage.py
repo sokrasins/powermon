@@ -3,7 +3,7 @@ from kasa import SmartStrip
 from threading import Thread, Lock
 
 from flask import Flask, json
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 
 import time
 import configparser
@@ -153,7 +153,8 @@ def main():
 
     # Use flask for sharing data
     api = Flask(__name__)
-    CORS(api)
+    cors = CORS(api, resources={r"/*": {"origins": "*"}})
+    api.config['CORS_HEADERS'] = 'Content-Type'
 
     # GET power consumption
     @api.route('/since/<timestamp>', methods=['GET'])
@@ -184,7 +185,7 @@ def main():
     pc.start(pd)
 
     # Start Flask server
-    api.run()
+    api.run(host='0.0.0.0')
     
     
 if __name__ == '__main__':

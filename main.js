@@ -1,6 +1,6 @@
 // set the dimensions and margins of the graph
 const margin = {top: 60, right: 50, bottom: 50, left: 50},
-    width = 800 - margin.left - margin.right,
+    width = window.innerWidth- margin.left - margin.right,
     height = 500 - margin.top - margin.bottom;
 
 // append the svg object to the body of the page
@@ -9,14 +9,14 @@ const svg = d3.select("#my_dataviz")
     .attr("width", width + margin.left + margin.right)
     .attr("height", height + margin.top + margin.bottom)
   .append("g")
+    .style("font", "14px arial")
     .attr("transform",
           `translate(${margin.left}, ${margin.top})`);
 
-//d3.json("http://127.0.0.1:5000/since_time/0")
-//
-power_data = []
-
-fetch("http://127.0.0.1:5000/since/0", {
+// Get the data for the last hour from the server
+// TODO: Selectable time windows?
+// TODO: Continuous updating?
+fetch("http://192.168.41.40:5000/last/1h", {
   method: 'GET',
   mode: 'cors'
 }).then(function(resp) {
@@ -53,7 +53,12 @@ fetch("http://127.0.0.1:5000/since/0", {
     .keys(keys)
     (data)
 
-
+  // Map timestamp from ms epoch time to minutes relative to now
+  const latestTime = data[data.length - 1].time
+  data = data.map(x => {
+	  x.time = (x.time - latestTime) / 1000 / 60
+	  return x
+  })
 
   //////////
   // AXIS //
@@ -65,21 +70,21 @@ fetch("http://127.0.0.1:5000/since/0", {
     .range([ 0, width ]);
   const xAxis = svg.append("g")
     .attr("transform", `translate(0, ${height})`)
-    .call(d3.axisBottom(x).ticks(5))
+    .call(d3.axisBottom(x).ticks(10))
 
   // Add X axis label:
   svg.append("text")
       .attr("text-anchor", "end")
       .attr("x", width)
       .attr("y", height+40 )
-      .text("Time (year)");
+      .text("Time (minutes)");
 
   // Add Y axis label:
   svg.append("text")
       .attr("text-anchor", "end")
       .attr("x", 0)
       .attr("y", -20 )
-      .text("# of baby born")
+      .text("Power Consumption (Watts)")
       .attr("text-anchor", "start")
 
   // Add Y axis
@@ -87,8 +92,26 @@ fetch("http://127.0.0.1:5000/since/0", {
     .domain([0, 100])
     .range([ height, 0 ]);
   svg.append("g")
-    .call(d3.axisLeft(y).ticks(5))
+    .call(d3.axisLeft(y).ticks(10))
 
+
+
+  //////////
+  // HIGHLIGHT GROUP //
+  //////////
+
+  // What to do when one group is hovered
+  const highlight = function(event,d){
+    // reduce opacity of all groups
+    d3.selectAll(".myArea").style("opacity", .1)
+    // expect the one that is hovered
+    d3.select("."+d).style("opacity", 1)
+  }
+
+  // And when it is not hovered anymore
+  const noHighlight = function(event,d){
+    d3.selectAll(".myArea").style("opacity", 1)
+  }
 
 
   //////////
@@ -97,17 +120,18 @@ fetch("http://127.0.0.1:5000/since/0", {
 
   // Add a clipPath: everything out of this area won't be drawn.
   const clip = svg.append("defs").append("svg:clipPath")
-      .attr("id", "clip")
-      .append("svg:rect")
-      .attr("width", width )
-      .attr("height", height )
-      .attr("x", 0)
-      .attr("y", 0);
+    .attr("id", "clip")
+    .append("svg:rect")
+    .attr("width", width )
+    .attr("height", height )
+    .attr("x", 0)
+    .attr("y", 0)
+
 
   // Add brushing
   const brush = d3.brushX()                 // Add the brush feature using the d3.brush function
-      .extent( [ [0,0], [width,height] ] ) // initialise the brush area: start at 0,0 and finishes at width,height: it means I select the whole graph area
-      .on("end", updateChart) // Each time the brush selection changes, trigger the 'updateChart' function
+    .extent( [ [0,0], [width,height] ] ) // initialise the brush area: start at 0,0 and finishes at width,height: it means I select the whole graph area
+    .on("end", updateChart) // Each time the brush selection changes, trigger the 'updateChart' function
 
   // Create the scatter variable: where both the circles and the brush take place
   const areaChart = svg.append('g')
@@ -124,22 +148,21 @@ fetch("http://127.0.0.1:5000/since/0", {
     .selectAll("mylayers")
     .data(stackedData)
     .join("path")
-      .attr("class", function(d) { return "myArea " + d.key })
-      .style("fill", function(d) { return color(d.key); })
-      .attr("d", area)
+    .attr("class", function(d) { return "myArea " + d.key })
+    .style("fill", function(d) { return color(d.key); })
+    .attr("d", area)
 
   // Add the brushing
   areaChart
     .append("g")
-      .attr("class", "brush")
-      .call(brush);
+    .attr("class", "brush")
+    .call(brush);
 
   let idleTimeout
   function idled() { idleTimeout = null; }
 
   // A function that update the chart for given boundaries
   function updateChart(event,d) {
-
     extent = event.selection
 
     // If no selection, back to initial coordinate. Otherwise, update X axis domain
@@ -157,57 +180,95 @@ fetch("http://127.0.0.1:5000/since/0", {
       .selectAll("path")
       .transition().duration(1000)
       .attr("d", area)
-    }
+  }
 
 
+  //////////
+  // TOOL TIP //
+  //////////
 
-    //////////
-    // HIGHLIGHT GROUP //
-    //////////
+  var bisectTime = d3.bisector(function(d) {
+          return d.time;
+  }).left;
 
-    // What to do when one group is hovered
-    const highlight = function(event,d){
-      // reduce opacity of all groups
-      d3.selectAll(".myArea").style("opacity", .1)
-      // expect the one that is hovered
-      d3.select("."+d).style("opacity", 1)
-    }
+  // Tooltip elements. Each plug gets an element
+  tooltipFoci = []
+  keys.forEach( (key, index) => {
+    tooltipFoci.push( svg.append("g")
+      .attr("class", "focus")
+      .style("display", "none")
+    );
+       
+    tooltipFoci[index].append("circle")
+      .attr("r", 5)
+      .attr("fill", "#000000");
 
-    // And when it is not hovered anymore
-    const noHighlight = function(event,d){
-      d3.selectAll(".myArea").style("opacity", 1)
-    }
+    tooltipFoci[index].append("text")
+      .attr("x", 9)
+      .attr("dy", ".35em")
+      .attr("fill", "#000000")
+      .attr("font-size", 14);
+  })
 
+  // tooltip with hover point and line
+  function mouseMove(event) {
+    var x0 = x.invert(d3.pointer(event)[0]),
+        i = bisectTime(data, x0, 1),
+        d0 = data[i - 1],
+        d1 = data[i],
+        d = x0 - d0.time > d1.time - x0 ? d1 : d0;
 
+    const plugVals = keys.map(key => d[key]);
+    const yVals = plugVals.map((sum => value => sum += value)(0));
 
-    //////////
-    // LEGEND //
-    //////////
+    tooltipFoci.forEach( (focus, index) => {
+      focus.attr("transform", "translate(" + x(d.time) + "," + y(yVals[index]) + ")");
+      focus.select("text").text(plugVals[index]+"W");
+    })
+  }
 
-    // Add one dot in the legend for each name.
-    const size = 20
-    svg.selectAll("myrect")
-      .data(keys)
-      .join("rect")
-        .attr("x", 600)
-        .attr("y", function(d,i){ return 10 + i*(size+5)}) // 100 is where the first dot appears. 25 is the distance between dots
-        .attr("width", size)
-        .attr("height", size)
-        .style("fill", function(d){ return color(d)})
-        .on("mouseover", highlight)
-        .on("mouseleave", noHighlight)
+  svg.append("rect")
+    .attr("opacity", "0")
+    .attr("width", width)
+    .attr("height", height)
+    .on("mouseover", function() {
+      tooltipFoci.forEach( focus => focus.style("display", null) )
+    })
+    .on("mouseout", function() {
+      tooltipFoci.forEach( focus => focus.style("display", "none") )
+    })
+    .on("mousemove", mouseMove);
+	
+	
 
-    // Add one dot in the legend for each name.
-    svg.selectAll("mylabels")
-      .data(keys)
-      .join("text")
-        .attr("x", 600 + size*1.2)
-        .attr("y", function(d,i){ return 10 + i*(size+5) + (size/2)}) // 100 is where the first dot appears. 25 is the distance between dots
-        .style("fill", function(d){ return color(d)})
-        .text(function(d){ return d})
-        .attr("text-anchor", "left")
-        .style("alignment-baseline", "middle")
-        .on("mouseover", highlight)
-        .on("mouseleave", noHighlight)
+  //////////
+  // LEGEND //
+  //////////
+
+  // Add one dot in the legend for each name.
+  const size = 10 
+  svg.selectAll("myrect")
+    .data(keys)
+    .join("rect")
+    .attr("x", 20)
+    .attr("y", function(d,i){ return i*(size+5)}) // 100 is where the first dot appears. 25 is the distance between dots
+    .attr("width", size)
+    .attr("height", size)
+    .style("fill", function(d){ return color(d)})
+    .on("mouseover", highlight)
+    .on("mouseleave", noHighlight)
+
+  // Add one dot in the legend for each name.
+  svg.selectAll("mylabels")
+    .data(keys)
+    .join("text")
+    .attr("x", 20 + size*1.2)
+    .attr("y", function(d,i){ return i*(size+5) + (size/2)}) // 100 is where the first dot appears. 25 is the distance between dots
+    .style("fill", function(d){ return color(d)})
+    .text(function(d){ return d})
+    .attr("text-anchor", "left")
+    .style("alignment-baseline", "middle")
+    .on("mouseover", highlight)
+    .on("mouseleave", noHighlight)
 
 })
