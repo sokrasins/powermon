@@ -2,29 +2,35 @@
 const url = "http://192.168.41.40:5000/"
 const since = "since/"
 
+const minsPerHour = 60
+const secsPerMin = 60
+const millisPerSec = 1000
+
+data = []
+display_hours = 1
+
 
 // set the dimensions and margins of the graph
 const margin = {top: 60, right: 50, bottom: 50, left: 50},
     width = window.innerWidth- margin.left - margin.right,
     height = 500 - margin.top - margin.bottom;
 
-var rad = document.chartLen.history;
-var prev = null;
-for (var i = 0; i < rad.length; i++) {
-    rad[i].addEventListener('change', function() {
-        (prev) ? console.log(prev.value): null;
-        if (this !== prev) {
-            prev = this;
-	    d3.select('svg').remove()
-	    plotGraph(this.value)
-        }
-    });
-}
+// Change the diplay_hours var when the radio button state has changed
+var timeSlider = document.getElementById("timeToDisplay")
+var timeLabel = document.getElementById("displayTimeLabel")
 
-data = []
+timeSlider.addEventListener("change", function () {
+  if (this.value !== display_hours) {
+    display_hours = this.value
+    console.log(this.value)
+    timeLabel.textContent = this.value.toString()
+    plotGraph(data, display_hours)
+  }
+
+})
 
 function getNewData(timestamp) {
-  fetch( url+since+"0", {
+  return fetch( url+since+timestamp, {
       method: 'GET',
       mode: 'cors'
     }).then( function(resp) {
@@ -32,38 +38,34 @@ function getNewData(timestamp) {
     })
 }
 
-const minsPerHour = 60
-const secsPerMin = 60
-const millisPerSec = 1000
-
 function trimData(data, numHours) {
   const lastTime = data[data.length-1].time
   const earliestTime = lastTime - (numHours * minsPerHour * secsPerMin * millisPerSec)
   newData = data.filter(sample => sample.time > earliestTime)
-  console.log(newData.length)
+  return newData
 }
 
 getNewData("0").then( function(newData) {
-    data.push(...trimData(
-      newData,
-      24
-    ))
-  })
+  data = newData
+})
 
 setInterval(() => {
   const nextDataTimestamp = (data[data.length-1].time + 1).toString()
   getNewData(nextDataTimestamp).then( function(newData) {
-    data.push(...trimData(
-      newData,
-      24
-    ))
-    console.log("new length:" + data.length)
+    data.push(...newData)
+    data = trimData(data, 24)
+    
+    plotGraph(data, display_hours)
   })
 
 }, 5000)
 
 // Plots the history of power consumption.
 function plotGraph(data, hours) {
+
+  data = trimData(data, hours) 
+
+  d3.selectAll('svg').remove()
 
   // append the svg object to the body of the page
   const svg = d3.select("#my_dataviz")
@@ -77,14 +79,14 @@ function plotGraph(data, hours) {
 
   // Get the data for the last hour from the server
   // TODO: Continuous updating?
-  fetch("http://192.168.41.40:5000/last/"+time, {
-    method: 'GET',
-    mode: 'cors'
-  }).then(function(resp) {
-    //power_data = resp.json();
-    //return power_data;
-    return resp.json();
-  }).then( function(data) {
+  //fetch("http://192.168.41.40:5000/last/"+time, {
+  //  method: 'GET',
+  //  mode: 'cors'
+  //}).then(function(resp) {
+  //  //power_data = resp.json();
+  //  //return power_data;
+  //  return resp.json();
+  //}).then( function(data) {
 
 
     //////////
@@ -332,8 +334,6 @@ function plotGraph(data, hours) {
       .on("mouseover", highlight)
       .on("mouseleave", noHighlight)
 
-  })
+  //})
 
 }
-
-//plotGraph("1h")
