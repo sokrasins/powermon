@@ -3,6 +3,21 @@ const margin = {top: 60, right: 50, bottom: 50, left: 50},
     width = window.innerWidth- margin.left - margin.right,
     height = 500 - margin.top - margin.bottom;
 
+var rad = document.chartLen.history;
+var prev = null;
+for (var i = 0; i < rad.length; i++) {
+    rad[i].addEventListener('change', function() {
+        (prev) ? console.log(prev.value): null;
+        if (this !== prev) {
+            prev = this;
+	    d3.select('svg').remove()
+	    plotGraph(this.value)
+        }
+    });
+}
+
+function plotGraph(time) {
+
 // append the svg object to the body of the page
 const svg = d3.select("#my_dataviz")
   .append("svg")
@@ -14,9 +29,8 @@ const svg = d3.select("#my_dataviz")
           `translate(${margin.left}, ${margin.top})`);
 
 // Get the data for the last hour from the server
-// TODO: Selectable time windows?
 // TODO: Continuous updating?
-fetch("http://192.168.41.40:5000/last/1h", {
+fetch("http://192.168.41.40:5000/last/"+time, {
   method: 'GET',
   mode: 'cors'
 }).then(function(resp) {
@@ -272,3 +286,7 @@ fetch("http://192.168.41.40:5000/last/1h", {
     .on("mouseleave", noHighlight)
 
 })
+
+}
+
+plotGraph("1h")
